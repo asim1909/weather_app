@@ -10,52 +10,90 @@ import { fetchForecast } from '../utils/fetchForecast';
 
 const apikey = "52b4b30e80ea54992a38162219caba8f";
 
+// ...existing imports...
+
+const getUnitSymbol = (unit) => (unit === 'metric' ? '°C' : '°F');
+
 export default function HomeScreen() {
   const [city, setCity] = useState('');
   const [weather, setWeather] = useState(null);
   const [forecast, setForecast] = useState(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [unit, setUnit] = useState('metric'); // 'metric' for °C, 'imperial' for °F
 
+  // Fetch weather when unit changes, for current city or location
   useEffect(() => {
-    getLocationWeather();
-  }, []);
+    const fetchData = async () => {
+      if (city) {
+        setLoading(true);
+        try {
+          const data = await fetchWeather(city, unit);
+          setWeather(data);
+          const forecastData = await fetchForecast(city, unit);
+          setForecast(forecastData);
+        } catch (err) {
+          setWeather(null);
+          setForecast(null);
+          alert('City not found!');
+        }
+        setLoading(false);
+      } else {
+        await getLocationWeather();
+      }
+    };
+    fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unit]);
 
   const getLocationWeather = async () => {
     try {
       let { status } = await Location.requestForegroundPermissionsAsync();
+      console.log('Location permission status:', status);
       if (status !== 'granted') {
         alert('Permission denied for location access.');
         return;
       }
-
       const location = await Location.getCurrentPositionAsync({});
+      console.log('Location object:', location);
       const { latitude, longitude } = location.coords;
-
       const response = await axios.get(
-        `https://api.openweathermap.org/data/2.5/weather?lat=${latitude}&lon=${longitude}&appid=${apikey}&units=metric`
+        `https://api.openweathermap.org/data/2.5/weather?lat=${latitude}&lon=${longitude}&appid=${apikey}&units=${unit}`
       );
-
+      console.log('Weather API response:', response.data);
       setWeather(response.data);
       const cityName = response.data.name;
-      const forecastData = await fetchForecast(cityName);
+      setCity(cityName);
+      const forecastData = await fetchForecast(cityName, unit);
+      console.log('Forecast API response:', forecastData);
       setForecast(forecastData);
     } catch (error) {
-      console.error(error);
+      console.error('Error in getLocationWeather:', error);
+      setWeather(null);
+      setForecast(null);
       alert('Error getting weather from location.');
     }
   };
+
+  // On mount, fetch location weather
+  useEffect(() => {
+    console.log('Initial mount: fetching location weather');
+    getLocationWeather();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSearch = async () => {
     if (!city) return;
     setLoading(true);
     Keyboard.dismiss();
     try {
-      const data = await fetchWeather(city);
+      const data = await fetchWeather(city, unit);
       setWeather(data);
-      const forecastData = await fetchForecast(city);
+      const forecastData = await fetchForecast(city, unit);
       setForecast(forecastData);
     } catch (err) {
+      setWeather(null);
+      setForecast(null);
       alert('City not found!');
     }
     setLoading(false);
@@ -75,6 +113,11 @@ export default function HomeScreen() {
     return require('../assets/sunny.jpg');
   };
 
+  // Toggle between Celsius and Fahrenheit
+  const toggleUnit = () => {
+    setUnit(unit === 'metric' ? 'imperial' : 'metric');
+  };
+
   return (
     <ImageBackground source={getBackgroundImage()} style={{ flex: 1 }} resizeMode="cover">
       <ScrollView
@@ -83,6 +126,10 @@ export default function HomeScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.container}>
+          {/* Unit Toggle Button */}
+          <TouchableOpacity style={styles.unitToggle} onPress={toggleUnit}>
+            <Text style={styles.unitToggleText}>{getUnitSymbol(unit)}</Text>
+          </TouchableOpacity>
           <Text style={styles.title}>Weather App</Text>
           <BlurView intensity={60} tint="light" style={styles.glassBox}>
             <View style={styles.inputContainer}>
@@ -104,14 +151,14 @@ export default function HomeScreen() {
           {weather && (
             <BlurView intensity={60} tint="light" style={styles.glassBox}>
               <View style={styles.cardInner}>
-                <WeatherCard weather={weather} />
+                <WeatherCard weather={weather} unit={getUnitSymbol(unit)} />
               </View>
             </BlurView>
           )}
           {forecast && (
             <BlurView intensity={60} tint="light" style={styles.glassBox}>
               <View style={styles.cardInner}>
-                <ForecastList forecast={forecast} />
+                <ForecastList forecast={forecast} unit={getUnitSymbol(unit)} />
               </View>
             </BlurView>
           )}
@@ -120,6 +167,7 @@ export default function HomeScreen() {
     </ImageBackground>
   );
 }
+
 
 const styles = StyleSheet.create({
   scrollContent: {
@@ -182,5 +230,20 @@ const styles = StyleSheet.create({
   },
   cardInner: {
     padding: 12,
+  },
+  unitToggle: {
+    position: 'absolute',
+    top: 20,
+    right: 30,
+    zIndex: 10,
+    backgroundColor: 'rgba(255,255,255,0.5)',
+    borderRadius: 16,
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+  },
+  unitToggleText: {
+    fontSize: 18,
+    color: '#007aff',
+    fontWeight: '600',
   },
 });

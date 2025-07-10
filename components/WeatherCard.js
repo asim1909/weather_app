@@ -2,12 +2,12 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
-export default function WeatherCard({ weather }) {
+export default function WeatherCard({ weather, unit }) {
   return (
     <View style={styles.card}>
       <Text style={styles.city}>{weather.name}</Text>
       <MaterialCommunityIcons name="weather-partly-cloudy" size={64} color="#ffa500" />
-      <Text style={styles.temp}>{weather.main.temp}°C</Text>
+      <Text style={styles.temp}>{weather.main.temp}{unit}</Text>
       <Text style={styles.desc}>{weather.weather[0].description}</Text>
     </View>
   );

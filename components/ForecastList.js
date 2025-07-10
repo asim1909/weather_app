@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 
-export default function ForecastList({ forecast }) {
+export default function ForecastList({ forecast, unit }) {
   const dailyData = forecast.list.filter((_, index) => index % 8 === 0);
 
   return (
@@ -10,7 +10,7 @@ export default function ForecastList({ forecast }) {
       {dailyData.map((item) => (
         <View style={styles.item} key={item.dt}>
           <Text style={styles.date}>{new Date(item.dt_txt).toDateString()}</Text>
-          <Text style={styles.temp}>{item.main.temp}°C</Text>
+          <Text style={styles.temp}>{item.main.temp}{unit}</Text>
           <Text style={styles.desc}>{item.weather[0].description}</Text>
         </View>
       ))}
