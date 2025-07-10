@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, StyleSheet, ImageBackground, ScrollView, RefreshControl, Keyboard } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, StyleSheet, ImageBackground, ScrollView, RefreshControl, Keyboard, FlatList } from 'react-native';
 import { BlurView } from 'expo-blur';
 import * as Location from 'expo-location';
 import axios from 'axios';
@@ -7,12 +7,18 @@ import WeatherCard from '../components/WeatherCard';
 import ForecastList from '../components/ForecastList';
 import { fetchWeather } from '../utils/fetchWeather';
 import { fetchForecast } from '../utils/fetchForecast';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import Constants from 'expo-constants';
 
-const apikey = "52b4b30e80ea54992a38162219caba8f";
-
-// ...existing imports...
-
+const apikey = Constants.expoConfig.extra.openWeatherApiKey;
+console.log('OpenWeather API Key:', apikey); // Debug log
 const getUnitSymbol = (unit) => (unit === 'metric' ? '°C' : '°F');
+
+const axiosInstance = axios.create({
+  timeout: 7000, // 7 seconds timeout
+});
 
 export default function HomeScreen() {
   const [city, setCity] = useState('');
@@ -20,60 +26,97 @@ export default function HomeScreen() {
   const [forecast, setForecast] = useState(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [unit, setUnit] = useState('metric'); // 'metric' for °C, 'imperial' for °F
+  const [unit, setUnit] = useState('metric');
+  const [favorites, setFavorites] = useState([]);
+  const [lastCoords, setLastCoords] = useState(null); // Store last used coordinates
 
-  // Fetch weather when unit changes, for current city or location
+  // Load favorites from AsyncStorage
   useEffect(() => {
-    const fetchData = async () => {
-      if (city) {
-        setLoading(true);
-        try {
-          const data = await fetchWeather(city, unit);
-          setWeather(data);
-          const forecastData = await fetchForecast(city, unit);
-          setForecast(forecastData);
-        } catch (err) {
-          setWeather(null);
-          setForecast(null);
-          alert('City not found!');
-        }
-        setLoading(false);
-      } else {
-        await getLocationWeather();
+    const loadFavorites = async () => {
+      try {
+        const favs = await AsyncStorage.getItem('favorites');
+        if (favs) setFavorites(JSON.parse(favs));
+      } catch (e) {
+        console.error('Failed to load favorites', e);
       }
     };
-    fetchData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [unit]);
+    loadFavorites();
+  }, []);
 
-  const getLocationWeather = async () => {
+  // Save favorites to AsyncStorage
+  const saveFavorites = async (newFavs) => {
+    setFavorites(newFavs);
+    await AsyncStorage.setItem('favorites', JSON.stringify(newFavs));
+  };
+
+  // Add or remove current city from favorites
+  const toggleFavorite = () => {
+    if (!city) return;
+    let newFavs;
+    if (favorites.includes(city)) {
+      newFavs = favorites.filter(fav => fav !== city);
+    } else {
+      newFavs = [...favorites, city];
+    }
+    saveFavorites(newFavs);
+  };
+
+  // Select a favorite city
+  const selectFavorite = (favCity) => {
+    setCity(favCity);
+    handleSearch(favCity);
+  };
+
+  // Fetch weather and forecast for current location
+  const getLocationWeather = async (selectedUnit = unit) => {
+    setLoading(true);
     try {
       let { status } = await Location.requestForegroundPermissionsAsync();
       console.log('Location permission status:', status);
       if (status !== 'granted') {
         alert('Permission denied for location access.');
+        setLoading(false);
         return;
       }
-      const location = await Location.getCurrentPositionAsync({});
+      // Use enableHighAccuracy: false for faster fetch
+      const location = await Location.getCurrentPositionAsync({ enableHighAccuracy: false });
       console.log('Location object:', location);
       const { latitude, longitude } = location.coords;
-      const response = await axios.get(
-        `https://api.openweathermap.org/data/2.5/weather?lat=${latitude}&lon=${longitude}&appid=${apikey}&units=${unit}`
+      setLastCoords({ latitude, longitude });
+      const response = await axiosInstance.get(
+        `https://api.openweathermap.org/data/2.5/weather?lat=${latitude}&lon=${longitude}&appid=${apikey}&units=${selectedUnit}`
       );
       console.log('Weather API response:', response.data);
       setWeather(response.data);
-      const cityName = response.data.name;
-      setCity(cityName);
-      const forecastData = await fetchForecast(cityName, unit);
-      console.log('Forecast API response:', forecastData);
-      setForecast(forecastData);
+      setCity(response.data.name);
+      const forecastData = await axiosInstance.get(
+        `https://api.openweathermap.org/data/2.5/forecast?q=${response.data.name}&appid=${apikey}&units=${selectedUnit}`
+      );
+      console.log('Forecast API response:', forecastData.data);
+      setForecast(forecastData.data);
     } catch (error) {
       console.error('Error in getLocationWeather:', error);
       setWeather(null);
       setForecast(null);
       alert('Error getting weather from location.');
     }
+    setLoading(false);
   };
+
+  // When toggling units, fetch by last used coordinates if available, else by city
+  useEffect(() => {
+    const fetchData = async () => {
+      if (lastCoords) {
+        await getLocationWeather(unit);
+      } else if (city) {
+        await handleSearch(city);
+      } else {
+        await getLocationWeather(unit);
+      }
+    };
+    fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unit]);
 
   // On mount, fetch location weather
   useEffect(() => {
@@ -82,14 +125,15 @@ export default function HomeScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleSearch = async () => {
-    if (!city) return;
+  const handleSearch = async (searchCity) => {
+    const cityToSearch = searchCity || city;
+    if (!cityToSearch) return;
     setLoading(true);
     Keyboard.dismiss();
     try {
-      const data = await fetchWeather(city, unit);
+      const data = await fetchWeather(cityToSearch, unit);
       setWeather(data);
-      const forecastData = await fetchForecast(city, unit);
+      const forecastData = await fetchForecast(cityToSearch, unit);
       setForecast(forecastData);
     } catch (err) {
       setWeather(null);
@@ -118,8 +162,15 @@ export default function HomeScreen() {
     setUnit(unit === 'metric' ? 'imperial' : 'metric');
   };
 
+  // Location button handler
+  const handleUseLocation = async () => {
+    setCity('');
+    setLastCoords(null); // Reset lastCoords so getLocationWeather always fetches fresh location
+    await getLocationWeather();
+  };
+
   return (
-    <ImageBackground source={getBackgroundImage()} style={{ flex: 1 }} resizeMode="cover">
+    <LinearGradient colors={['#e0eafc', '#cfdef3']} style={{ flex: 1 }}>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
@@ -130,6 +181,7 @@ export default function HomeScreen() {
           <TouchableOpacity style={styles.unitToggle} onPress={toggleUnit}>
             <Text style={styles.unitToggleText}>{getUnitSymbol(unit)}</Text>
           </TouchableOpacity>
+
           <Text style={styles.title}>Weather App</Text>
           <BlurView intensity={60} tint="light" style={styles.glassBox}>
             <View style={styles.inputContainer}>
@@ -140,13 +192,43 @@ export default function HomeScreen() {
                 value={city}
                 onChangeText={setCity}
                 returnKeyType="search"
-                onSubmitEditing={handleSearch}
+                onSubmitEditing={() => handleSearch()}
               />
-              <TouchableOpacity style={styles.button} onPress={handleSearch} activeOpacity={0.8}>
+              <TouchableOpacity style={styles.button} onPress={() => handleSearch()} activeOpacity={0.8}>
                 <Text style={styles.buttonText}>Search</Text>
+              </TouchableOpacity>
+              {/* Favorite Button */}
+              <TouchableOpacity style={styles.favButton} onPress={toggleFavorite}>
+                <MaterialCommunityIcons
+                  name={favorites.includes(city) ? 'star' : 'star-outline'}
+                  size={28}
+                  color={favorites.includes(city) ? '#ffd700' : '#888'}
+                />
+              </TouchableOpacity>
+              {/* Use My Location Button */}
+              <TouchableOpacity style={styles.locationButton} onPress={handleUseLocation}>
+                <MaterialCommunityIcons name="crosshairs-gps" size={28} color="#007aff" />
               </TouchableOpacity>
             </View>
           </BlurView>
+
+          {/* Favorites List */}
+          {favorites.length > 0 && (
+            <View style={styles.favListBox}>
+              <Text style={styles.favListTitle}>Favorites:</Text>
+              <FlatList
+                data={favorites}
+                horizontal
+                keyExtractor={(item) => item}
+                renderItem={({ item }) => (
+                  <TouchableOpacity style={styles.favItem} onPress={() => selectFavorite(item)}>
+                    <Text style={styles.favItemText}>{item}</Text>
+                  </TouchableOpacity>
+                )}
+                showsHorizontalScrollIndicator={false}
+              />
+            </View>
+          )}
           {loading && <ActivityIndicator size="large" color="#1e90ff" style={{ marginVertical: 20 }} />}
           {weather && (
             <BlurView intensity={60} tint="light" style={styles.glassBox}>
@@ -164,10 +246,9 @@ export default function HomeScreen() {
           )}
         </View>
       </ScrollView>
-    </ImageBackground>
+    </LinearGradient>
   );
 }
-
 
 const styles = StyleSheet.create({
   scrollContent: {
@@ -245,5 +326,40 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: '#007aff',
     fontWeight: '600',
+  },
+  favButton: {
+    marginLeft: 8,
+    padding: 4,
+  },
+  favListBox: {
+    width: '90%',
+    alignSelf: 'center',
+    marginBottom: 10,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    borderRadius: 12,
+    padding: 8,
+  },
+  favListTitle: {
+    fontWeight: 'bold',
+    marginBottom: 4,
+    color: '#007aff',
+  },
+  favItem: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginRight: 8,
+    elevation: 2,
+  },
+  favItemText: {
+    color: '#007aff',
+    fontWeight: 'bold',
+  },
+  locationButton: {
+    marginLeft: 8,
+    padding: 4,
+    backgroundColor: 'rgba(0,122,255,0.08)',
+    borderRadius: 16,
   },
 });
