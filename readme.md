@@ -1,6 +1,6 @@
 # Weather App
 
-A modern, feature-rich React Native weather app with an Apple-style glass UI and comprehensive weather information.
+A modern, feature-rich React Native weather app with comprehensive weather information.
 
 ## Features
 
