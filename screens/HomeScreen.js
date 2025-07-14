@@ -212,7 +212,7 @@ export default function HomeScreen() {
             </View>
           </BlurView>
 
-          {/* Favorites List */}
+          {/* Favorites List */} 
           {favorites.length > 0 && (
             <View style={styles.favListBox}>
               <Text style={styles.favListTitle}>Favorites:</Text>

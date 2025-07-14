@@ -10,7 +10,6 @@ A modern, feature-rich React Native weather app with an Apple-style glass UI and
 - **Favorites System**: Save and quickly access your favorite cities
 - **Location Services**: One-tap access to current location weather
 - **Dynamic Background**: Clean gradient background (no more changing images)
-- **Apple-style Glassmorphism UI**: Beautiful, modern interface
 - **Secure API Key Management**: Environment variables for API security
 - **Offline Support**: Cached weather data for offline viewing
 - **Pull-to-Refresh**: Refresh weather data with a simple swipe
